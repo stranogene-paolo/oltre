@@ -1,5 +1,6 @@
 using Stranogene.Games.Oltre.Spaceship;
 using UnityEngine;
+using Stranogene.Games.Oltre.Run;
 
 namespace Stranogene.Games.Oltre.Debugging
 {
@@ -53,8 +54,8 @@ namespace Stranogene.Games.Oltre.Debugging
                 visible = !visible;
 
             // Auto-bind leggero: prova a trovare SpaceshipLife se non assegnato.
-            if (spaceshipLife == null)
-                spaceshipLife = FindFirstObjectByType<SpaceshipLife>(FindObjectsInactive.Exclude);
+            if (!spaceshipLife)
+                TryBindFromRunManager();
 
             // Smoothing su deltaTime NON scalato (così anche con slowmo l’FPS resta “vero”).
             var dt = Time.unscaledDeltaTime;
@@ -121,6 +122,51 @@ namespace Stranogene.Games.Oltre.Debugging
                 text,
                 style
             );
+        }
+
+        private void OnEnable()
+        {
+            if (RunManager.Instance != null)
+            {
+                RunManager.Instance.OnRunStarted += HandleRunStarted;
+                // bind immediato nel caso l’overlay entri dopo il run start
+                TryBindFromRunManager();
+            }
+        }
+
+        private void OnDisable()
+        {
+            if (RunManager.Instance != null)
+                RunManager.Instance.OnRunStarted -= HandleRunStarted;
+        }
+
+        private void HandleRunStarted(int runIndex)
+        {
+            TryBindFromRunManager();
+        }
+
+        /// <summary>
+        /// Bind “forte”: prendi il riferimento dalla fonte di verità (RunManager).
+        /// </summary>
+        private void TryBindFromRunManager()
+        {
+            var rm = RunManager.Instance;
+            if (rm != null && rm.CurrentLife != null)
+            {
+                spaceshipLife = rm.CurrentLife;
+                return;
+            }
+
+            // fallback (se RunManager non c’è o non ha ancora settato CurrentLife)
+            spaceshipLife = FindFirstObjectByType<SpaceshipLife>(FindObjectsInactive.Exclude);
+        }
+
+        /// <summary>
+        /// API pubblica (opzionale) se vuoi settare da codice senza eventi.
+        /// </summary>
+        public void SetSpaceshipLife(SpaceshipLife life)
+        {
+            spaceshipLife = life;
         }
     }
 }
