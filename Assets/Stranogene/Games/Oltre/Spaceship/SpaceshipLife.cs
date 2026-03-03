@@ -5,7 +5,7 @@ namespace Stranogene.Games.Oltre.Spaceship
     /// <summary>
     /// SpaceshipLife
     /// Gestisce:
-    /// - Lifetime pilota (in "anni" astratti, convertiti da tempo reale)
+    /// - Età pilota (in anni interi, cresce nel tempo)
     /// - Energia (consumata quando la nave si muove)
     /// Espone:
     /// - CanMove
@@ -14,24 +14,27 @@ namespace Stranogene.Games.Oltre.Spaceship
     /// </summary>
     public class SpaceshipLife : MonoBehaviour
     {
-        [Header("Pilot Lifetime")]
-        [Tooltip("Anni massimi del pilota (unità di gameplay).")]
-        [SerializeField] private float pilotMaxYears = 10f;
-
+        [Header("Pilot Age")]
         [Tooltip("Quanti 'anni' passano per ogni secondo reale. (Esempio: 1 anno ogni 5 sec => 0.2)")]
-        [SerializeField] private float yearsPerSecond = 0.2f;
+        [SerializeField]
+        private float yearsPerSecond = 0.2f;
 
-        [Header("Energy")]
-        [Tooltip("Energia massima.")]
-        [SerializeField] private float maxEnergy = 100f;
+        [Tooltip("Riferimento al Pilot. Se nullo prova a prenderlo dallo stesso GameObject.")] [SerializeField]
+        private Pilot.Pilot pilot;
 
-        [Tooltip("Consumo energia al secondo quando stai dando input (baseline).")]
-        [SerializeField] private float energyDrainPerSecond = 5f;
+        [Header("Energy")] [Tooltip("Energia massima.")] [SerializeField]
+        private float maxEnergy = 100f;
 
-        [Tooltip("Consumo extra proporzionale alla velocità (opzionale).")]
-        [SerializeField] private float energyDrainPerSpeedPerSecond = 0f;
+        [Tooltip("Consumo energia al secondo quando stai dando input (baseline).")] [SerializeField]
+        private float energyDrainPerSecond = 5f;
 
-        public float PilotYearsLeft { get; private set; }
+        [Tooltip("Consumo extra proporzionale alla velocità (opzionale).")] [SerializeField]
+        private float energyDrainPerSpeedPerSecond = 0f;
+
+        // UI-friendly: età intera (solo crescita)
+        public int PilotAge => pilot ? pilot.Age : 0;
+        public int PilotMaxAge => pilot ? pilot.MaxAge : 0;
+
         public float Energy { get; private set; }
 
         public bool IsPilotAlive { get; private set; } = true;
@@ -43,29 +46,45 @@ namespace Stranogene.Games.Oltre.Spaceship
 
         private void Awake()
         {
+            if (pilot == null) pilot = GetComponent<Pilot.Pilot>();
             ResetRun();
         }
 
         /// <summary>Resetta valori per una nuova run/pilota.</summary>
         public void ResetRun()
         {
-            PilotYearsLeft = pilotMaxYears;
+            // Pilot
+            if (pilot != null)
+            {
+                pilot.ResetPilot();
+                IsPilotAlive = true;
+            }
+            else
+            {
+                // Se manca Pilot, consideriamo comunque vivo per non bloccare il gioco,
+                // ma logghiamo il warning una volta.
+                IsPilotAlive = true;
+                Debug.LogWarning("SpaceshipLife: Pilot mancante sullo stesso GameObject (aggiungi Pilot.cs).");
+            }
+
+            // Energy
             Energy = maxEnergy;
-            IsPilotAlive = true;
+
             hasTriggeredStop = false;
         }
 
         private void Update()
         {
             if (!IsPilotAlive) return;
+            if (pilot == null) return;
 
-            // Countdown lifetime pilota
-            PilotYearsLeft -= yearsPerSecond * Time.deltaTime;
+            // Età cresce (solo interi) in base al tempo reale
+            float yearsToAdd = yearsPerSecond * Time.deltaTime;
 
-            if (PilotYearsLeft <= 0f)
+            bool died = pilot.AdvanceYears(yearsToAdd);
+            if (died)
             {
-                PilotYearsLeft = 0f;
-                KillPilot("Lifetime finished");
+                KillPilot("Pilot reached max age");
             }
         }
 
