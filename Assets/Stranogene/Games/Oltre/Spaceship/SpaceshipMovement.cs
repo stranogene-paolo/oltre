@@ -3,7 +3,7 @@ using UnityEngine;
 namespace Stranogene.Games.Oltre.Spaceship
 {
     /// <summary>
-    /// PlayerMovement2D
+    /// SpaceshipMovement
     /// Movimento top-down 2D con Rigidbody2D:
     /// - input in Update (cache)
     /// - fisica in FixedUpdate (AddForce)
@@ -62,8 +62,8 @@ namespace Stranogene.Games.Oltre.Spaceship
         {
             // Frecce direzionali / WASD (Input Manager classico).
             // Se stai usando il New Input System, lo adattiamo dopo: qui teniamo MVP.
-            float x = Input.GetAxisRaw("Horizontal");
-            float y = Input.GetAxisRaw("Vertical");
+            var x = Input.GetAxisRaw("Horizontal");
+            var y = Input.GetAxisRaw("Vertical");
 
             var v = new Vector2(x, y);
 
@@ -84,7 +84,7 @@ namespace Stranogene.Games.Oltre.Spaceship
 
             // 2) Clamp velocità massima
             var vel = rb.linearVelocity;
-            float speed = vel.magnitude;
+            var speed = vel.magnitude;
 
             if (speed > maxSpeed && maxSpeed > 0f)
             {
@@ -94,16 +94,14 @@ namespace Stranogene.Games.Oltre.Spaceship
             }
 
             // 3) Rotazione verso movimento
-            if (rotateToMovement && speed >= rotateMinSpeed)
-            {
-                Vector2 dir = vel / speed;
+            if (!rotateToMovement || !(speed >= rotateMinSpeed)) return;
+            var dir = vel / speed;
 
-                // Calcola l’angolo in gradi per ruotare lo "spriteForwardLocal" verso "dir"
-                float angle = Vector2.SignedAngle(spriteForwardLocal, dir);
+            // Calcola l’angolo in gradi per ruotare lo "spriteForwardLocal" verso "dir"
+            var angle = Vector2.SignedAngle(spriteForwardLocal, dir);
 
-                // Ruota attorno a Z
-                transform.rotation = Quaternion.Euler(0f, 0f, angle);
-            }
+            // Ruota attorno a Z
+            transform.rotation = Quaternion.Euler(0f, 0f, angle);
         }
     }
 }
