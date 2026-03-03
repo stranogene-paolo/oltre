@@ -1,3 +1,4 @@
+using Stranogene.Games.Oltre.Spaceship;
 using UnityEngine;
 
 namespace Stranogene.Games.Oltre.Debugging
@@ -8,6 +9,7 @@ namespace Stranogene.Games.Oltre.Debugging
     /// - FPS (smoothed)
     /// - Timescale / VSync / TargetFrameRate
     /// - Risoluzione
+    /// - Spaceship Energy / Pilot Lifetime (anni)
     /// Toggle: F3
     /// </summary>
     public class DebugOverlay : MonoBehaviour
@@ -19,6 +21,11 @@ namespace Stranogene.Games.Oltre.Debugging
 
         [Header("FPS")] [Tooltip("Più alto = più stabile (ma meno reattivo).")] [Range(0.02f, 1f)] [SerializeField]
         private float fpsSmoothing = 0.2f;
+
+        [Header("Gameplay (optional reference)")]
+        [Tooltip("Se non assegnato, il DebugOverlay cercherà automaticamente un SpaceshipLife in scena.")]
+        [SerializeField]
+        private SpaceshipLife spaceshipLife;
 
         private float smoothedUnscaledDeltaTime = 0.016f; // start ~60fps
         private GUIStyle style;
@@ -37,13 +44,19 @@ namespace Stranogene.Games.Oltre.Debugging
             DontDestroyOnLoad(gameObject);
 
             // SOLO dati non-IMGUI qui.
-            boxRect = new Rect(10, 10, 460, 140);
+            // Aumentata altezza per includere anche Energy/Lifetime.
+            boxRect = new Rect(10, 10, 460, 170);
         }
 
         private void Update()
         {
             if (Input.GetKeyDown(toggleKey))
                 visible = !visible;
+
+            // Auto-bind leggero: prova a trovare SpaceshipLife se non assegnato.
+            // Lo facciamo in Update così funziona anche dopo cambi scena / instantiate runtime.
+            if (spaceshipLife == null)
+                spaceshipLife = FindFirstObjectByType<SpaceshipLife>(FindObjectsInactive.Exclude);
 
             // Smoothing su deltaTime NON scalato (così anche con slowmo l’FPS resta “vero”).
             var dt = Time.unscaledDeltaTime;
@@ -78,12 +91,29 @@ namespace Stranogene.Games.Oltre.Debugging
             var w = Screen.width;
             var h = Screen.height;
 
+            // Gameplay readout (numerici come richiesto)
+            string gameplayLine;
+            if (spaceshipLife != null)
+            {
+                float energy = spaceshipLife.Energy; // float
+                int lifetimeYearsLeft =
+                    Mathf.CeilToInt(spaceshipLife.PilotYearsLeft); // intero (non scende a 0 "troppo presto")
+
+                gameplayLine =
+                    $"Energy: <b>{energy:0.0}</b>  |  Lifetime (years): <b>{lifetimeYearsLeft}</b>";
+            }
+            else
+            {
+                gameplayLine = "Energy: <b>—</b>  |  Lifetime (years): <b>—</b> (SpaceshipLife not found)";
+            }
+
             var text =
                 $"<b>OLTRE Debug</b>  (toggle: {toggleKey})\n" +
                 $"FPS: <b>{fps:0}</b>  |  unscaled dt: {smoothedUnscaledDeltaTime * 1000f:0.0} ms\n" +
                 $"Time.timeScale: <b>{timescale:0.00}</b>\n" +
                 $"VSync: <b>{vsync}</b>  |  targetFrameRate: <b>{target}</b>\n" +
-                $"Resolution: <b>{w}x{h}</b>\n";
+                $"Resolution: <b>{w}x{h}</b>\n" +
+                $"{gameplayLine}\n";
 
             GUI.Box(boxRect, GUIContent.none);
             GUI.Label(
