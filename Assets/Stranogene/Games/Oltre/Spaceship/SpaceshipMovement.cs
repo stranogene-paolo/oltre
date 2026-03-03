@@ -13,25 +13,27 @@ namespace Stranogene.Games.Oltre.Spaceship
     [RequireComponent(typeof(Rigidbody2D))]
     public class SpaceshipMovement : MonoBehaviour
     {
-        [Header("Movement")]
-        [Tooltip("Velocità massima in unità/secondo.")]
-        [SerializeField] private float maxSpeed = 1f;
+        [Header("Movement")] [Tooltip("Velocità massima in unità/secondo.")] [SerializeField]
+        private float maxSpeed = 1f;
 
         [Tooltip("Accelerazione (forza) applicata al Rigidbody2D. Valori tipici: 5-50 in base alla massa/drag.")]
-        [SerializeField] private float acceleration = 15f;
+        [SerializeField]
+        private float acceleration = 15f;
 
-        [Tooltip("Drag (inerzia). Più basso = più scivola.")]
-        [SerializeField] private float linearDrag = 1.5f;
+        [Tooltip("Drag (inerzia). Più basso = più scivola.")] [SerializeField]
+        private float linearDrag = 1.5f;
 
-        [Header("Rotation")]
-        [Tooltip("Se true, ruota lo sprite verso la direzione di movimento.")]
-        [SerializeField] private bool rotateToMovement = true;
+        [Header("Rotation")] [Tooltip("Se true, ruota lo sprite verso la direzione di movimento.")] [SerializeField]
+        private bool rotateToMovement = true;
 
-        [Tooltip("Soglia sotto cui non aggiorna la rotazione (evita jitter da micro-velocità).")]
-        [SerializeField] private float rotateMinSpeed = 0.05f;
+        [Tooltip("Soglia sotto cui non aggiorna la rotazione (evita jitter da micro-velocità).")] [SerializeField]
+        private float rotateMinSpeed = 0.05f;
 
         [Tooltip("Direzione 'forward' dello sprite in locale. Se il tuo sprite guarda a destra, lascia (1,0).")]
-        [SerializeField] private Vector2 spriteForwardLocal = Vector2.right;
+        [SerializeField]
+        private Vector2 spriteForwardLocal = Vector2.right;
+
+        [SerializeField] private SpaceshipLife life;
 
         private Rigidbody2D rb;
         private Vector2 moveInput; // cache input (Update)
@@ -39,6 +41,9 @@ namespace Stranogene.Games.Oltre.Spaceship
         private void Awake()
         {
             rb = GetComponent<Rigidbody2D>();
+
+            if (life == null) life = GetComponent<SpaceshipLife>();
+            if (life == null) Debug.LogWarning("SpaceshipMovement: SpaceshipLife mancante sullo stesso GameObject.");
 
             // Setup base coerente per top-down “Lovers-like”
             rb.gravityScale = 0f;
@@ -73,13 +78,23 @@ namespace Stranogene.Games.Oltre.Spaceship
 
         private void FixedUpdate()
         {
+            if (life && !life.CanMove)
+            {
+                // stop fisico e blocca movimento
+                rb.linearVelocity = Vector2.zero;
+                return;
+            }
+
             // Mantieni drag in sync con inspector (utile mentre tuniamo).
             rb.linearDamping = linearDrag;
 
             // 1) Forza di accelerazione
-            if (moveInput.sqrMagnitude > 0f)
+            if (moveInput.sqrMagnitude is > 0f and > 0f)
             {
                 rb.AddForce(moveInput * acceleration, ForceMode2D.Force);
+
+                if (life)
+                    life.ConsumeEnergy(Time.fixedDeltaTime, rb.linearVelocity.magnitude);
             }
 
             // 2) Clamp velocità massima
