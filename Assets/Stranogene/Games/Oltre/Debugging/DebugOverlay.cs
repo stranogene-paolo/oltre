@@ -9,7 +9,7 @@ namespace Stranogene.Games.Oltre.Debugging
     /// - FPS (smoothed)
     /// - Timescale / VSync / TargetFrameRate
     /// - Risoluzione
-    /// - Spaceship Energy / Pilot Lifetime (anni)
+    /// - Spaceship Energy / Pilot Age (anni)
     /// Toggle: F3
     /// </summary>
     public class DebugOverlay : MonoBehaviour
@@ -44,8 +44,7 @@ namespace Stranogene.Games.Oltre.Debugging
             DontDestroyOnLoad(gameObject);
 
             // SOLO dati non-IMGUI qui.
-            // Aumentata altezza per includere anche Energy/Lifetime.
-            boxRect = new Rect(10, 10, 460, 170);
+            boxRect = new Rect(10, 10, 460, 185);
         }
 
         private void Update()
@@ -54,7 +53,6 @@ namespace Stranogene.Games.Oltre.Debugging
                 visible = !visible;
 
             // Auto-bind leggero: prova a trovare SpaceshipLife se non assegnato.
-            // Lo facciamo in Update così funziona anche dopo cambi scena / instantiate runtime.
             if (spaceshipLife == null)
                 spaceshipLife = FindFirstObjectByType<SpaceshipLife>(FindObjectsInactive.Exclude);
 
@@ -96,15 +94,17 @@ namespace Stranogene.Games.Oltre.Debugging
             if (spaceshipLife != null)
             {
                 float energy = spaceshipLife.Energy; // float
-                int lifetimeYearsLeft =
-                    Mathf.CeilToInt(spaceshipLife.PilotYearsLeft); // intero (non scende a 0 "troppo presto")
+
+                // Età pilota: solo interi, solo in crescita
+                int age = spaceshipLife.PilotAge;
+                int maxAge = spaceshipLife.PilotMaxAge;
 
                 gameplayLine =
-                    $"Energy: <b>{energy:0.0}</b>  |  Lifetime (years): <b>{lifetimeYearsLeft}</b>";
+                    $"Energy: <b>{energy:0.0}</b>  |  Pilot Age: <b>{age}</b> / <b>{maxAge}</b>";
             }
             else
             {
-                gameplayLine = "Energy: <b>—</b>  |  Lifetime (years): <b>—</b> (SpaceshipLife not found)";
+                gameplayLine = "Energy: <b>—</b>  |  Pilot Age: <b>—</b> / <b>—</b> (SpaceshipLife not found)";
             }
 
             var text =
