@@ -17,7 +17,7 @@ GameObject:
   - component: {fileID: 6848830010656786147}
   m_Layer: 0
   m_Name: Spaceship
-  m_TagString: Untagged
+  m_TagString: Player
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
@@ -171,13 +171,16 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: c27035153c476426d9f80ee29779bd12, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::Stranogene.Games.Oltre.Spaceship.SpaceshipMovement
-  maxSpeed: 2
-  acceleration: 15
-  linearDrag: 1.5
-  rotateToMovement: 1
-  rotateMinSpeed: 0.05
+  maxSpeed: 3
+  forwardThrust: 6
+  brakeThrust: 3
+  linearDrag: 0.35
+  maxTurnSpeed: 180
+  turnAcceleration: 540
+  turnDeceleration: 720
   spriteForwardLocal: {x: 0, y: 1}
   life: {fileID: 8744496224284107725}
+  turnEnergyCostMultiplier: 0.5
 --- !u!114 &8744496224284107725
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -194,7 +197,7 @@ MonoBehaviour:
   pilot: {fileID: 6848830010656786147}
   pilotTraitPool: {fileID: 11400000, guid: bb8d5399fde6d4d32a2589b06d6d132a, type: 2}
   maxEnergy: 100
-  energyDrainPerSecond: 30
+  energyDrainPerSecond: 1
   energyDrainPerSpeedPerSecond: 0
 --- !u!114 &6848830010656786147
 MonoBehaviour:
