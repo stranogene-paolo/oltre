@@ -45,6 +45,7 @@ namespace Stranogene.Games.Oltre.Spaceship
         [Tooltip("Consumo extra proporzionale alla velocità (opzionale).")] [SerializeField]
         private float energyDrainPerSpeedPerSecond = 0f;
 
+
         private float energyDrainMultiplier = 1f;
         private bool hasTriggeredStop;
 

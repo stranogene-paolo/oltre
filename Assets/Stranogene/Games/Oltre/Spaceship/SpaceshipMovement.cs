@@ -47,6 +47,13 @@ namespace Stranogene.Games.Oltre.Spaceship
         [Header("Energy Cost")] [Tooltip("Moltiplicatore del costo energetico quando ruoti la nave.")] [SerializeField]
         private float turnEnergyCostMultiplier = 0.5f;
 
+        [Header("Thruster FX")] [SerializeField]
+        private ParticleSystem mainThrustFx;
+
+        [SerializeField] private ParticleSystem turnLeftFx;
+        [SerializeField] private ParticleSystem turnRightFx;
+        [SerializeField] private ParticleSystem brakeFx;
+
         private Rigidbody2D rb;
 
         // Cache input letti in Update
@@ -72,6 +79,11 @@ namespace Stranogene.Games.Oltre.Spaceship
             rb.freezeRotation = true;
             rb.interpolation = RigidbodyInterpolation2D.Interpolate;
             rb.collisionDetectionMode = CollisionDetectionMode2D.Continuous;
+
+            PrepareThrusterFx(mainThrustFx);
+            PrepareThrusterFx(turnLeftFx);
+            PrepareThrusterFx(turnRightFx);
+            PrepareThrusterFx(brakeFx);
         }
 
         private void OnValidate()
@@ -92,10 +104,17 @@ namespace Stranogene.Games.Oltre.Spaceship
             spriteForwardLocal = spriteForwardLocal.normalized;
         }
 
+        private void OnDisable()
+        {
+            StopAllThrusterFx();
+        }
+
         private void Update()
         {
             turnInput = Input.GetAxisRaw("Horizontal");
             thrustInput = Input.GetAxisRaw("Vertical");
+
+            UpdateThrusterFx();
         }
 
         private void FixedUpdate()
@@ -213,6 +232,58 @@ namespace Stranogene.Games.Oltre.Spaceship
         {
             var localRight = new Vector2(-spriteForwardLocal.y, spriteForwardLocal.x).normalized;
             return ((Vector2)(transform.rotation * localRight)).normalized;
+        }
+
+        private void PrepareThrusterFx(ParticleSystem fx)
+        {
+            if (fx == null) return;
+
+            var emission = fx.emission;
+            emission.enabled = false;
+
+            if (!fx.isPlaying)
+                fx.Play();
+        }
+
+        private void UpdateThrusterFx()
+        {
+            if (!isActiveAndEnabled)
+            {
+                StopAllThrusterFx();
+                return;
+            }
+
+            if (life != null && !life.CanMove)
+            {
+                StopAllThrusterFx();
+                return;
+            }
+
+            var mainActive = thrustInput > 0.01f;
+            var brakeActive = thrustInput < -0.01f;
+            var turnLeftActive = turnInput < -0.01f;
+            var turnRightActive = turnInput > 0.01f;
+
+            SetThrusterEmission(mainThrustFx, mainActive);
+            SetThrusterEmission(brakeFx, brakeActive);
+            SetThrusterEmission(turnLeftFx, turnLeftActive);
+            SetThrusterEmission(turnRightFx, turnRightActive);
+        }
+
+        private void StopAllThrusterFx()
+        {
+            SetThrusterEmission(mainThrustFx, false);
+            SetThrusterEmission(brakeFx, false);
+            SetThrusterEmission(turnLeftFx, false);
+            SetThrusterEmission(turnRightFx, false);
+        }
+
+        private void SetThrusterEmission(ParticleSystem fx, bool enabled)
+        {
+            if (fx == null) return;
+
+            var emission = fx.emission;
+            emission.enabled = enabled;
         }
     }
 }
