@@ -9848,7 +9848,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::Stranogene.Games.Oltre.Spaceship.SpaceshipMovement
   maxSpeed: 3
-  forwardThrust: 6
+  forwardThrust: 12
   brakeThrust: 3
   linearDrag: 0.35
   lateralDamping: 2
@@ -9858,6 +9858,8 @@ MonoBehaviour:
   spriteForwardLocal: {x: 0, y: 1}
   life: {fileID: 8744496224284107725}
   turnEnergyCostMultiplier: 0.5
+  gravityAssistMaxSpeed: 11
+  gravityAssistGraceTime: 0.9
   mainThrustFx: {fileID: 8643720788561383583}
   turnLeftFx: {fileID: 604930066584842158}
   turnRightFx: {fileID: 8984778564076264683}

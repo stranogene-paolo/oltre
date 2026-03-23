@@ -13,6 +13,11 @@ namespace Stranogene.Games.Oltre.Space
     /// Visual:
     /// - disegna in game un ring procedurale via LineRenderer
     /// - nessuno sprite richiesto per il campo gravitazionale
+    ///
+    /// Gameplay:
+    /// - può applicare una spinta di slingshot
+    /// - può applicare un trajectory assist per rendere il flyby più leggibile
+    /// - può ridurre temporaneamente il lateral damping della nave
     /// </summary>
     [ExecuteAlways]
     [RequireComponent(typeof(CircleCollider2D))]
@@ -41,6 +46,30 @@ namespace Stranogene.Games.Oltre.Space
         [Tooltip("Quanto rapidamente la gravità cresce andando verso il centro del campo.")] [SerializeField]
         private float radialFalloffPower = 1.75f;
 
+        [Header("Slingshot")] [Tooltip("Abilita la spinta extra da fionda gravitazionale.")] [SerializeField]
+        private bool enableSlingshot = true;
+
+        [Tooltip("Accelerazione extra applicata lungo la direzione della velocità in uscita dal pozzo.")]
+        [SerializeField]
+        private float slingshotAcceleration = 14f;
+
+        [Tooltip("Velocità minima richiesta per poter attivare la fionda.")] [SerializeField]
+        private float minSpeedForSlingshot = 1.5f;
+
+        [Tooltip("Quanto la traiettoria deve essere tangenziale. 0 = irrilevante, 1 = perfettamente tangenziale.")]
+        [SerializeField]
+        [Range(0f, 1f)]
+        private float minTangentialFactor = 0.55f;
+
+        [Tooltip(
+            "Quanto la nave deve essere già in uscita dal pianeta. 0 = basta non entrare, 1 = uscita perfettamente radiale.")]
+        [SerializeField]
+        [Range(0f, 1f)]
+        private float minOutwardFactor = 0.1f;
+
+        [Tooltip("Controlla quanto la fionda privilegia il passaggio vicino al pianeta.")] [SerializeField]
+        private float slingshotRadialPower = 1.35f;
+
         [Header("Target Filter")]
         [Tooltip("Layer colpiti dalla gravità. Se lasci Everything, influenzerà tutti i Rigidbody2D nel trigger.")]
         [SerializeField]
@@ -66,6 +95,34 @@ namespace Stranogene.Games.Oltre.Space
 
         [Tooltip("Sorting order del ring.")] [SerializeField]
         private int gravityFieldSortingOrder = -5;
+
+        [Header("Trajectory Assist")]
+        [Tooltip("Riduce il lateral damping della nave mentre attraversa il pozzo gravitazionale.")]
+        [SerializeField]
+        [Range(0f, 1f)]
+        private float gravityDriftLateralDampingMultiplier = 0.12f;
+
+        [Tooltip("Piccola coda temporale per mantenere la curvatura anche subito dopo il passaggio.")] [SerializeField]
+        private float gravityDriftGraceTime = 0.2f;
+
+        [Tooltip("Abilita un aiuto di traiettoria per ottenere una fionda gravitazionale leggibile in gameplay.")]
+        [SerializeField]
+        private bool enableTrajectoryAssist = true;
+
+        [Tooltip("Velocità minima per applicare il trajectory assist.")] [SerializeField]
+        private float minSpeedForTrajectoryAssist = 1f;
+
+        [Tooltip("Quanto il moto deve essere tangenziale per attivare l'assist.")] [SerializeField] [Range(0f, 1f)]
+        private float minTangentialFactorForAssist = 0.45f;
+
+        [Tooltip("Quanto assist applichiamo già al bordo del campo gravitazionale.")] [SerializeField] [Range(0f, 1f)]
+        private float boundaryAssistMultiplier = 0.40f;
+
+        [Tooltip("Accelerazione che contrasta la caduta verso il centro del pianeta.")] [SerializeField]
+        private float inwardCancelAcceleration = 10f;
+
+        [Tooltip("Accelerazione che accompagna la nave lungo la tangente corretta.")] [SerializeField]
+        private float tangentialAssistAcceleration = 11f;
 
         [Header("Debug")] [SerializeField] private bool drawDebugLines = true;
 
@@ -94,6 +151,8 @@ namespace Stranogene.Games.Oltre.Space
 
         private void OnDisable()
         {
+            trackedBodies.Clear();
+
             if (gravityFieldRenderer != null)
                 gravityFieldRenderer.enabled = false;
         }
@@ -113,8 +172,23 @@ namespace Stranogene.Games.Oltre.Space
             boundaryGravityMultiplier = Mathf.Clamp01(boundaryGravityMultiplier);
             if (radialFalloffPower < 0.01f) radialFalloffPower = 0.01f;
 
+            if (slingshotAcceleration < 0f) slingshotAcceleration = 0f;
+            if (minSpeedForSlingshot < 0f) minSpeedForSlingshot = 0f;
+            minTangentialFactor = Mathf.Clamp01(minTangentialFactor);
+            minOutwardFactor = Mathf.Clamp01(minOutwardFactor);
+            if (slingshotRadialPower < 0.01f) slingshotRadialPower = 0.01f;
+
             if (gravityFieldLineWidth < 0.001f) gravityFieldLineWidth = 0.001f;
             if (gravityFieldSegments < 24) gravityFieldSegments = 24;
+
+            gravityDriftLateralDampingMultiplier = Mathf.Clamp01(gravityDriftLateralDampingMultiplier);
+            if (gravityDriftGraceTime < 0f) gravityDriftGraceTime = 0f;
+
+            if (minSpeedForTrajectoryAssist < 0f) minSpeedForTrajectoryAssist = 0f;
+            minTangentialFactorForAssist = Mathf.Clamp01(minTangentialFactorForAssist);
+            boundaryAssistMultiplier = Mathf.Clamp01(boundaryAssistMultiplier);
+            if (inwardCancelAcceleration < 0f) inwardCancelAcceleration = 0f;
+            if (tangentialAssistAcceleration < 0f) tangentialAssistAcceleration = 0f;
 
             var trigger = GetComponent<CircleCollider2D>();
             if (trigger != null)
@@ -128,21 +202,17 @@ namespace Stranogene.Games.Oltre.Space
 
         private void FixedUpdate()
         {
-            if (trackedBodies.Count == 0) return;
+            if (trackedBodies.Count == 0)
+                return;
 
             var center = GetGravityCenterWorld();
+            var triggerWorldRadius = GetWorldTriggerRadius();
 
             for (var i = trackedBodies.Count - 1; i >= 0; i--)
             {
                 var rb = trackedBodies[i];
 
-                if (rb == null)
-                {
-                    trackedBodies.RemoveAt(i);
-                    continue;
-                }
-
-                if (!rb.gameObject.activeInHierarchy)
+                if (rb == null || !rb.gameObject.activeInHierarchy)
                 {
                     trackedBodies.RemoveAt(i);
                     continue;
@@ -162,21 +232,17 @@ namespace Stranogene.Games.Oltre.Space
 
                 var direction = toCenter / distance;
 
-                // Accelerazione gravitazionale base:
-                // gravityStrength / distance^gravityExponent
                 var acceleration = gravityStrength / Mathf.Pow(distance, gravityExponent);
 
-                // Tuning arcade:
-                // al bordo del trigger la gravità è attenuata,
-                // poi cresce progressivamente verso il centro.
-                var triggerWorldRadius = GetWorldTriggerRadius();
+                var inward01 = 0f;
                 if (triggerWorldRadius > 0.0001f)
                 {
-                    var normalizedDistance = Mathf.Clamp01(distance / triggerWorldRadius); // 0 = centro, 1 = bordo
-                    var inward01 = 1f - normalizedDistance;
-                    var radialBlend = Mathf.Pow(inward01, radialFalloffPower);
+                    var normalizedDistance = Mathf.Clamp01(distance / triggerWorldRadius);
+                    inward01 = 1f - normalizedDistance;
 
+                    var radialBlend = Mathf.Pow(inward01, radialFalloffPower);
                     var boundaryFactor = Mathf.Lerp(boundaryGravityMultiplier, 1f, radialBlend);
+
                     acceleration *= boundaryFactor;
                 }
 
@@ -184,8 +250,128 @@ namespace Stranogene.Games.Oltre.Space
 
                 rb.AddForce(direction * acceleration * rb.mass, ForceMode2D.Force);
 
+                if (enableTrajectoryAssist)
+                    ApplyTrajectoryAssist(rb, direction, distance, triggerWorldRadius);
+
+                if (rb.TryGetComponent<SpaceshipMovement>(out var movement))
+                {
+                    movement.SetExternalLateralDampingMultiplier(
+                        gravityDriftLateralDampingMultiplier,
+                        gravityDriftGraceTime);
+                }
+
+                if (enableSlingshot)
+                    ApplySlingshot(rb, direction, distance, triggerWorldRadius, inward01);
+
                 if (drawDebugLines)
                     Debug.DrawLine(rb.position, center, Color.cyan);
+            }
+        }
+
+        private void ApplySlingshot(
+            Rigidbody2D rb,
+            Vector2 directionToCenter,
+            float distance,
+            float triggerWorldRadius,
+            float inward01)
+        {
+            var velocity = rb.linearVelocity;
+            var speed = velocity.magnitude;
+
+            if (speed < minSpeedForSlingshot)
+                return;
+
+            var velocityDir = velocity / speed;
+            var outwardDir = -directionToCenter;
+            var tangentDir = new Vector2(-outwardDir.y, outwardDir.x);
+
+            var tangentialFactor = Mathf.Abs(Vector2.Dot(velocityDir, tangentDir));
+            var outwardFactor = Vector2.Dot(velocityDir, outwardDir);
+
+            if (tangentialFactor < minTangentialFactor)
+                return;
+
+            if (outwardFactor < minOutwardFactor)
+                return;
+
+            var tangential01 = Mathf.InverseLerp(minTangentialFactor, 1f, tangentialFactor);
+            var outward01 = Mathf.InverseLerp(minOutwardFactor, 1f, outwardFactor);
+
+            var radial01 = inward01;
+            if (triggerWorldRadius > 0.0001f)
+                radial01 = Mathf.Clamp01(1f - (distance / triggerWorldRadius));
+
+            var radialBoost = Mathf.Pow(radial01, slingshotRadialPower);
+            var slingshotFactor = tangential01 * outward01 * radialBoost;
+
+            if (slingshotFactor <= 0.0001f)
+                return;
+
+            rb.AddForce(
+                velocityDir * (slingshotAcceleration * slingshotFactor * rb.mass),
+                ForceMode2D.Force);
+
+            if (drawDebugLines)
+                Debug.DrawRay(rb.position, velocityDir * (1.5f + slingshotFactor * 2f), Color.yellow);
+        }
+
+        private void ApplyTrajectoryAssist(
+            Rigidbody2D rb,
+            Vector2 directionToCenter,
+            float distance,
+            float triggerWorldRadius)
+        {
+            var velocity = rb.linearVelocity;
+            var speed = velocity.magnitude;
+
+            if (speed < minSpeedForTrajectoryAssist)
+                return;
+
+            var velocityDir = velocity / speed;
+            var baseTangent = new Vector2(-directionToCenter.y, directionToCenter.x);
+
+            var tangentialDot = Vector2.Dot(velocityDir, baseTangent);
+            var tangentialFactor = Mathf.Abs(tangentialDot);
+
+            if (tangentialFactor < minTangentialFactorForAssist)
+                return;
+
+            var tangentDir = tangentialDot >= 0f ? baseTangent : -baseTangent;
+
+            var radial01 = 0f;
+            if (triggerWorldRadius > 0.0001f)
+                radial01 = Mathf.Clamp01(1f - (distance / triggerWorldRadius));
+
+            var tangential01 = Mathf.InverseLerp(minTangentialFactorForAssist, 1f, tangentialFactor);
+            var assist01 = tangential01 * Mathf.Lerp(boundaryAssistMultiplier, 1f, radial01);
+
+            if (assist01 <= 0.0001f)
+                return;
+
+            var inwardSpeed = Vector2.Dot(velocity, directionToCenter);
+
+            if (inwardSpeed > 0f)
+            {
+                rb.AddForce(
+                    (-directionToCenter) * (inwardCancelAcceleration * assist01 * rb.mass),
+                    ForceMode2D.Force);
+            }
+
+            rb.AddForce(
+                tangentDir * (tangentialAssistAcceleration * assist01 * rb.mass),
+                ForceMode2D.Force);
+
+            if (drawDebugLines)
+            {
+                Debug.DrawRay(rb.position, tangentDir * (1.2f + assist01 * 2f), Color.green);
+
+                if (inwardSpeed > 0f)
+                {
+                    Debug.DrawRay(
+                        rb.position,
+                        (-directionToCenter) * (1f + assist01 * 1.5f),
+                        new Color(1f, 0.5f, 0f));
+                }
             }
         }
 
@@ -216,10 +402,7 @@ namespace Stranogene.Games.Oltre.Space
                 return true;
 
             var life = rb.GetComponent<SpaceshipLife>();
-            if (life == null)
-                return false;
-
-            return life.CanMove;
+            return life != null && life.CanMove;
         }
 
         private bool IsLayerAllowed(int layer)
@@ -237,7 +420,8 @@ namespace Stranogene.Games.Oltre.Space
 
         private float GetWorldTriggerRadius()
         {
-            if (gravityTrigger == null) return 0f;
+            if (gravityTrigger == null)
+                return 0f;
 
             var scale = transform.lossyScale;
             var maxScale = Mathf.Max(Mathf.Abs(scale.x), Mathf.Abs(scale.y));
