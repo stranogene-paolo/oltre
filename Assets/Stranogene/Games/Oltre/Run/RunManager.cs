@@ -82,8 +82,18 @@ namespace Stranogene.Games.Oltre.Run
         [SerializeField]
         private bool rebindMainCameraOnNewRun = true;
 
+        [Header("Expedition")]
+        [Tooltip("Numero totale di piloti disponibili per ogni spedizione.")]
+        [SerializeField]
+        [Min(1)]
+        private int pilotsPerExpedition = 3;
 
-        public int CurrentRunIndex { get; private set; } = 0;
+
+        public int CurrentRunIndex { get; private set; } = 0; // conta i segmenti/piloti giocati
+        public int CurrentExpeditionIndex { get; private set; } = 0;
+        public int CurrentPilotIndexInExpedition { get; private set; } = 0;
+        public int PilotsRemainingInExpedition { get; private set; } = 0;
+
         public bool IsRunActive { get; private set; } = false;
 
         public GameObject CurrentSpaceship { get; private set; }
@@ -134,10 +144,7 @@ namespace Stranogene.Games.Oltre.Run
             if (wasAbleToMoveLastFrame && !canMove)
             {
                 var reason = ResolveRunEndReason(CurrentLife);
-                EndCurrentRun(reason);
-
-                if (autoRestartOnRunEnd)
-                    Invoke(nameof(StartNewRun), Mathf.Max(0f, autoRestartDelay));
+                HandleCurrentPilotStop(reason);
             }
 
             wasAbleToMoveLastFrame = canMove;
@@ -151,11 +158,12 @@ namespace Stranogene.Games.Oltre.Run
 
         /// <summary>
         /// Avvia una nuova run:
-        /// - Se c'è una ship corrente: o la trasformi in derelitto (persistente) oppure la distruggi (opzione)
-        /// - Spawni una nuova ship e resetti la run (Pilot random + energia)
         /// </summary>
         public void StartNewRun()
         {
+            CancelInvoke(nameof(StartNewRun));
+            CancelInvoke(nameof(StartNextPilotInExpedition));
+
             if (spaceshipPrefab == null)
             {
                 Debug.LogError("[RunManager] spaceshipPrefab non assegnato.");
@@ -163,27 +171,69 @@ namespace Stranogene.Games.Oltre.Run
             }
 
             if (IsRunActive)
+                EndCurrentRun("Forced expedition restart");
+
+            PrepareCurrentShipForNextSpawn();
+
+            CurrentExpeditionIndex++;
+            CurrentPilotIndexInExpedition = 0;
+            PilotsRemainingInExpedition = Mathf.Max(1, pilotsPerExpedition);
+
+            Debug.Log(
+                $"[RunManager] EXPEDITION START #{CurrentExpeditionIndex} | pilots={PilotsRemainingInExpedition}");
+
+            StartNextPilotInExpedition();
+        }
+
+        private void HandleCurrentPilotStop(string reason)
+        {
+            EndCurrentRun(reason);
+
+            PilotsRemainingInExpedition = Mathf.Max(0, PilotsRemainingInExpedition - 1);
+
+            if (PilotsRemainingInExpedition > 0)
             {
-                EndCurrentRun("Forced new run");
+                Debug.Log(
+                    $"[RunManager] NEXT PILOT | expedition #{CurrentExpeditionIndex} | nextPilot={CurrentPilotIndexInExpedition + 1} | remaining={PilotsRemainingInExpedition}");
+
+                Invoke(nameof(StartNextPilotInExpedition), Mathf.Max(0f, autoRestartDelay));
+                return;
             }
 
-            if (CurrentSpaceship != null)
+            Debug.Log($"[RunManager] EXPEDITION END #{CurrentExpeditionIndex} - {reason}");
+
+            if (autoRestartOnRunEnd)
+                Invoke(nameof(StartNewRun), Mathf.Max(0f, autoRestartDelay));
+        }
+
+        private void StartNextPilotInExpedition()
+        {
+            if (spaceshipPrefab == null)
             {
-                if (destroyCurrentShipOnNewRun)
-                {
-                    Destroy(CurrentSpaceship);
-                }
-                else if (keepDerelictsInScene)
-                {
-                    MakeCurrentShipDerelict();
-                }
+                Debug.LogError("[RunManager] spaceshipPrefab non assegnato.");
+                return;
             }
 
+            if (PilotsRemainingInExpedition <= 0)
+            {
+                Debug.LogWarning("[RunManager] Nessun pilota rimanente per questa spedizione.");
+                return;
+            }
+
+            PrepareCurrentShipForNextSpawn();
+
+            CurrentPilotIndexInExpedition++;
+            SpawnPlayableShip();
+        }
+
+        private void SpawnPlayableShip()
+        {
             var pos = spawnPoint ? spawnPoint.position : Vector3.zero;
             var rot = spawnPoint ? spawnPoint.rotation : Quaternion.identity;
 
             CurrentSpaceship = Instantiate(spaceshipPrefab, pos, rot);
-            CurrentSpaceship.name = $"Spaceship_Run_{CurrentRunIndex + 1}";
+            CurrentSpaceship.name =
+                $"Spaceship_Exp_{CurrentExpeditionIndex}_Pilot_{CurrentPilotIndexInExpedition}";
 
             RebindCameraFollow(CurrentSpaceship.transform);
 
@@ -192,20 +242,29 @@ namespace Stranogene.Games.Oltre.Run
             {
                 Debug.LogError(
                     "[RunManager] La spaceshipPrefab non ha SpaceshipLife. Aggiungilo al root della prefab.");
+                return;
             }
-            else
-            {
-                // ResetRun già genera un nuovo Pilot random e resetta energia
-                CurrentLife.ResetRun();
-            }
+
+            CurrentLife.ResetRun();
 
             CurrentRunIndex++;
             IsRunActive = true;
+            wasAbleToMoveLastFrame = CurrentLife.CanMove;
 
-            wasAbleToMoveLastFrame = (CurrentLife != null) && CurrentLife.CanMove;
+            Debug.Log(
+                $"[RunManager] PILOT START | expedition #{CurrentExpeditionIndex} | pilot {CurrentPilotIndexInExpedition}/{pilotsPerExpedition} | segment #{CurrentRunIndex} | remaining={PilotsRemainingInExpedition}");
 
-            Debug.Log($"[RunManager] RUN START #{CurrentRunIndex}");
             OnRunStarted?.Invoke(CurrentRunIndex);
+        }
+
+        private void PrepareCurrentShipForNextSpawn()
+        {
+            if (CurrentSpaceship == null) return;
+
+            if (destroyCurrentShipOnNewRun || !keepDerelictsInScene)
+                Destroy(CurrentSpaceship);
+            else
+                MakeCurrentShipDerelict();
         }
 
         /// <summary>

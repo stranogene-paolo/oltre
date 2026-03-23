@@ -4,52 +4,72 @@ namespace Stranogene.Games.Oltre.Spaceship
 {
     /// <summary>
     /// SpaceshipMovement
-    /// Movimento top-down 2D con Rigidbody2D:
-    /// - input in Update (cache)
-    /// - fisica in FixedUpdate (AddForce)
-    /// - clamp velocità massima
-    /// - rotazione verso la direzione di movimento
+    /// Patch 1 arcade:
+    /// - Horizontal = rotazione
+    /// - Vertical > 0 = thrust forward
+    /// - Vertical < 0 = brake
+    /// - inerzia semplice
+    /// - rotazione con peso
     /// </summary>
     [RequireComponent(typeof(Rigidbody2D))]
     public class SpaceshipMovement : MonoBehaviour
     {
-        [Header("Movement")] [Tooltip("Velocità massima in unità/secondo.")] [SerializeField]
-        private float maxSpeed = 1f;
+        [Header("Translation")] [Tooltip("Velocità massima assoluta in unità/secondo.")] [SerializeField]
+        private float maxSpeed = 6f;
 
-        [Tooltip("Accelerazione (forza) applicata al Rigidbody2D. Valori tipici: 5-50 in base alla massa/drag.")]
-        [SerializeField]
-        private float acceleration = 15f;
+        [Tooltip("Spinta in avanti.")] [SerializeField]
+        private float forwardThrust = 12f;
 
-        [Tooltip("Drag (inerzia). Più basso = più scivola.")] [SerializeField]
-        private float linearDrag = 1.5f;
+        [Tooltip("Forza di frenata applicata contro la velocità corrente.")] [SerializeField]
+        private float brakeThrust = 18f;
 
-        [Header("Rotation")] [Tooltip("Se true, ruota lo sprite verso la direzione di movimento.")] [SerializeField]
-        private bool rotateToMovement = true;
+        [Tooltip("Drag lineare base. Più basso = più inerzia.")] [SerializeField]
+        private float linearDrag = 0.35f;
 
-        [Tooltip("Soglia sotto cui non aggiorna la rotazione (evita jitter da micro-velocità).")] [SerializeField]
-        private float rotateMinSpeed = 0.05f;
+        [Tooltip("Smorzamento leggero della velocità laterale. Più alto = meno drift laterale.")] [SerializeField]
+        private float lateralDamping = 2f;
 
-        [Tooltip("Direzione 'forward' dello sprite in locale. Se il tuo sprite guarda a destra, lascia (1,0).")]
+        [Header("Rotation")] [Tooltip("Velocità angolare massima in gradi/sec.")] [SerializeField]
+        private float maxTurnSpeed = 180f;
+
+        [Tooltip("Quanto rapidamente la nave raggiunge la velocità di rotazione target.")] [SerializeField]
+        private float turnAcceleration = 540f;
+
+        [Tooltip("Smorzamento della rotazione quando non dai input.")] [SerializeField]
+        private float turnDeceleration = 720f;
+
+        [Tooltip("Direzione 'forward' dello sprite in locale. Se lo sprite guarda a destra, lascia (1,0).")]
         [SerializeField]
         private Vector2 spriteForwardLocal = Vector2.right;
 
         [SerializeField] private SpaceshipLife life;
 
+        [Header("Energy Cost")] [Tooltip("Moltiplicatore del costo energetico quando ruoti la nave.")] [SerializeField]
+        private float turnEnergyCostMultiplier = 0.5f;
+
         private Rigidbody2D rb;
-        private Vector2 moveInput; // cache input (Update)
+
+        // Cache input letti in Update
+        private float turnInput;
+        private float thrustInput;
+
+        // Stato runtime
+        private float currentTurnSpeed;
 
         private void Awake()
         {
             rb = GetComponent<Rigidbody2D>();
 
-            if (life == null) life = GetComponent<SpaceshipLife>();
-            if (life == null) Debug.LogWarning("SpaceshipMovement: SpaceshipLife mancante sullo stesso GameObject.");
+            if (life == null)
+                life = GetComponent<SpaceshipLife>();
 
-            // Setup base coerente per top-down “Lovers-like”
+            if (life == null)
+                Debug.LogWarning("SpaceshipMovement: SpaceshipLife mancante sullo stesso GameObject.");
+
             rb.gravityScale = 0f;
             rb.linearDamping = linearDrag;
             rb.angularDamping = 0f;
-            rb.freezeRotation = true; // gestiamo noi la rotazione via script
+            rb.freezeRotation = true;
             rb.interpolation = RigidbodyInterpolation2D.Interpolate;
             rb.collisionDetectionMode = CollisionDetectionMode2D.Continuous;
         }
@@ -57,57 +77,142 @@ namespace Stranogene.Games.Oltre.Spaceship
         private void OnValidate()
         {
             if (maxSpeed < 0f) maxSpeed = 0f;
-            if (acceleration < 0f) acceleration = 0f;
+            if (forwardThrust < 0f) forwardThrust = 0f;
+            if (brakeThrust < 0f) brakeThrust = 0f;
             if (linearDrag < 0f) linearDrag = 0f;
-            if (spriteForwardLocal.sqrMagnitude < 0.0001f) spriteForwardLocal = Vector2.right;
+            if (maxTurnSpeed < 0f) maxTurnSpeed = 0f;
+            if (turnAcceleration < 0f) turnAcceleration = 0f;
+            if (turnDeceleration < 0f) turnDeceleration = 0f;
+            if (turnEnergyCostMultiplier < 0f) turnEnergyCostMultiplier = 0f;
+            if (lateralDamping < 0f) lateralDamping = 0f;
+
+            if (spriteForwardLocal.sqrMagnitude < 0.0001f)
+                spriteForwardLocal = Vector2.right;
+
             spriteForwardLocal = spriteForwardLocal.normalized;
         }
 
         private void Update()
         {
-            var x = Input.GetAxisRaw("Horizontal");
-            var y = Input.GetAxisRaw("Vertical");
-
-            var v = new Vector2(x, y);
-
-            moveInput = (v.sqrMagnitude > 1f) ? v.normalized : v;
+            turnInput = Input.GetAxisRaw("Horizontal");
+            thrustInput = Input.GetAxisRaw("Vertical");
         }
 
         private void FixedUpdate()
         {
             if (life && !life.CanMove)
             {
-                // stop fisico e blocca movimento
                 rb.linearVelocity = Vector2.zero;
+                currentTurnSpeed = 0f;
                 return;
             }
 
             rb.linearDamping = linearDrag;
 
-            if (moveInput.sqrMagnitude is > 0f and > 0f)
+            HandleRotation(Time.fixedDeltaTime);
+            HandleTranslation(Time.fixedDeltaTime);
+            ApplyLateralDamping(Time.fixedDeltaTime);
+            ClampSpeed();
+        }
+
+        private void HandleRotation(float dt)
+        {
+            var hasTurnInput = Mathf.Abs(turnInput) > 0.01f;
+            var targetTurnSpeed = -turnInput * maxTurnSpeed;
+
+            if (hasTurnInput)
             {
-                rb.AddForce(moveInput * acceleration, ForceMode2D.Force);
+                currentTurnSpeed = Mathf.MoveTowards(
+                    currentTurnSpeed,
+                    targetTurnSpeed,
+                    turnAcceleration * dt);
+
+                // Ruotare costa energia
+                if (life)
+                    life.ConsumeEnergy(dt * turnEnergyCostMultiplier, rb.linearVelocity.magnitude);
+            }
+            else
+            {
+                currentTurnSpeed = Mathf.MoveTowards(
+                    currentTurnSpeed,
+                    0f,
+                    turnDeceleration * dt);
+            }
+
+            if (Mathf.Abs(currentTurnSpeed) <= 0.001f) return;
+
+            var deltaAngle = currentTurnSpeed * dt;
+            transform.rotation = Quaternion.Euler(0f, 0f, transform.eulerAngles.z + deltaAngle);
+        }
+
+
+        private void HandleTranslation(float dt)
+        {
+            var worldForward = GetWorldForward();
+
+            // Thrust in avanti
+            if (thrustInput > 0.01f)
+            {
+                rb.AddForce(worldForward * (forwardThrust * thrustInput), ForceMode2D.Force);
 
                 if (life)
-                    life.ConsumeEnergy(Time.fixedDeltaTime, rb.linearVelocity.magnitude);
+                    life.ConsumeEnergy(dt, rb.linearVelocity.magnitude);
+
+                return;
             }
 
-            var vel = rb.linearVelocity;
-            var speed = vel.magnitude;
+            // Brake contro la velocità corrente
+            if (!(thrustInput < -0.01f)) return;
 
-            if (speed > maxSpeed && maxSpeed > 0f)
+            var velocity = rb.linearVelocity;
+            if (velocity.sqrMagnitude > 0.0001f)
             {
-                rb.linearVelocity = vel * (maxSpeed / speed);
-                vel = rb.linearVelocity;
-                speed = vel.magnitude;
+                rb.AddForce(-velocity.normalized * (brakeThrust * Mathf.Abs(thrustInput)), ForceMode2D.Force);
             }
 
-            if (!rotateToMovement || !(speed >= rotateMinSpeed)) return;
-            var dir = vel / speed;
+            if (life)
+                life.ConsumeEnergy(dt, rb.linearVelocity.magnitude);
+        }
 
-            var angle = Vector2.SignedAngle(spriteForwardLocal, dir);
+        private void ClampSpeed()
+        {
+            if (maxSpeed <= 0f) return;
 
-            transform.rotation = Quaternion.Euler(0f, 0f, angle);
+            var speed = rb.linearVelocity.magnitude;
+            if (speed <= maxSpeed) return;
+
+            rb.linearVelocity = rb.linearVelocity.normalized * maxSpeed;
+        }
+
+        private Vector2 GetWorldForward()
+        {
+            return ((Vector2)(transform.rotation * spriteForwardLocal)).normalized;
+        }
+
+        private void ApplyLateralDamping(float dt)
+        {
+            if (lateralDamping <= 0f) return;
+
+            var velocity = rb.linearVelocity;
+            if (velocity.sqrMagnitude <= 0.0001f) return;
+
+            var forward = GetWorldForward();
+            var right = GetWorldRight();
+
+            var forwardSpeed = Vector2.Dot(velocity, forward);
+            var lateralSpeed = Vector2.Dot(velocity, right);
+
+            // Smorzamento frame-rate independent: leggero ma continuo
+            var t = 1f - Mathf.Exp(-lateralDamping * dt);
+            var dampedLateralSpeed = Mathf.Lerp(lateralSpeed, 0f, t);
+
+            rb.linearVelocity = (forward * forwardSpeed) + (right * dampedLateralSpeed);
+        }
+
+        private Vector2 GetWorldRight()
+        {
+            var localRight = new Vector2(-spriteForwardLocal.y, spriteForwardLocal.x).normalized;
+            return ((Vector2)(transform.rotation * localRight)).normalized;
         }
     }
 }
