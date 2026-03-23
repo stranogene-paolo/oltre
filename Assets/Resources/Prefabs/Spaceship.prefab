@@ -190,10 +190,11 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: e26b278437cf241c390189db0d29c9f7, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::Stranogene.Games.Oltre.Spaceship.SpaceshipLife
-  yearsPerSecond: 5
+  yearsPerSecond: 1
   pilot: {fileID: 6848830010656786147}
+  pilotTraitPool: {fileID: 11400000, guid: bb8d5399fde6d4d32a2589b06d6d132a, type: 2}
   maxEnergy: 100
-  energyDrainPerSecond: 5
+  energyDrainPerSecond: 30
   energyDrainPerSpeedPerSecond: 0
 --- !u!114 &6848830010656786147
 MonoBehaviour:
@@ -207,6 +208,11 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 664bfaff17a0a48c996c0133d793ba67, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::Stranogene.Games.Oltre.Pilot.Pilot
-  minStartAge: 25
-  maxStartAge: 45
+  startAge: 0
+  age: 0
   maxAge: 65
+  energyConsumptionMultiplier: 1
+  traits: []
+  displayName: 
+  callsign: 
+  title: 

@@ -1,4 +1,6 @@
 using UnityEngine;
+using Stranogene.Games.Oltre.Pilot;
+using Stranogene.Games.Oltre.ScriptableObjects;
 
 namespace Stranogene.Games.Oltre.Spaceship
 {
@@ -14,6 +16,13 @@ namespace Stranogene.Games.Oltre.Spaceship
     /// </summary>
     public class SpaceshipLife : MonoBehaviour
     {
+        public enum StopReason
+        {
+            None = 0,
+            EnergyDepleted = 1,
+            PilotDead = 2
+        }
+
         [Header("Pilot Age")]
         [Tooltip("Quanti 'anni' passano per ogni secondo reale. (Esempio: 1 anno ogni 5 sec => 0.2)")]
         [SerializeField]
@@ -21,6 +30,11 @@ namespace Stranogene.Games.Oltre.Spaceship
 
         [Tooltip("Riferimento al Pilot. Se nullo prova a prenderlo dallo stesso GameObject.")] [SerializeField]
         private Pilot.Pilot pilot;
+
+        [Header("Pilot Generation (ScriptableObject)")]
+        [Tooltip("Pool di tratti e range età per generare il pilota a ogni run.")]
+        [SerializeField]
+        private PilotTraitPoolSO pilotTraitPool;
 
         [Header("Energy")] [Tooltip("Energia massima.")] [SerializeField]
         private float maxEnergy = 100f;
@@ -31,7 +45,9 @@ namespace Stranogene.Games.Oltre.Spaceship
         [Tooltip("Consumo extra proporzionale alla velocità (opzionale).")] [SerializeField]
         private float energyDrainPerSpeedPerSecond = 0f;
 
-        // UI-friendly: età intera (solo crescita)
+        private float energyDrainMultiplier = 1f;
+        private bool hasTriggeredStop;
+
         public int PilotAge => pilot ? pilot.Age : 0;
         public int PilotMaxAge => pilot ? pilot.MaxAge : 0;
 
@@ -39,53 +55,56 @@ namespace Stranogene.Games.Oltre.Spaceship
 
         public bool IsPilotAlive { get; private set; } = true;
         public bool HasEnergy => Energy > 0f;
-
         public bool CanMove => IsPilotAlive && HasEnergy;
 
-        private bool hasTriggeredStop;
+        public StopReason CurrentStopReason { get; private set; } = StopReason.None;
 
         private void Awake()
         {
-            if (pilot == null) pilot = GetComponent<Pilot.Pilot>();
-            ResetRun();
+            if (pilot == null)
+                pilot = GetComponent<Pilot.Pilot>();
         }
 
-        /// <summary>Resetta valori per una nuova run/pilota.</summary>
+        /// <summary>
+        /// Resetta valori per una nuova run/pilota.
+        /// </summary>
         public void ResetRun()
         {
-            // Pilot
-            if (pilot != null)
-            {
-                pilot.ResetPilot();
-                IsPilotAlive = true;
-            }
-            else
-            {
-                // Se manca Pilot, consideriamo comunque vivo per non bloccare il gioco,
-                // ma logghiamo il warning una volta.
-                IsPilotAlive = true;
-                Debug.LogWarning("SpaceshipLife: Pilot mancante sullo stesso GameObject (aggiungi Pilot.cs).");
-            }
-
-            // Energy
-            Energy = maxEnergy;
-
+            CurrentStopReason = StopReason.None;
             hasTriggeredStop = false;
+            Energy = maxEnergy;
+            IsPilotAlive = true;
+            energyDrainMultiplier = 1f;
+
+            if (pilot == null)
+            {
+                Debug.LogWarning("SpaceshipLife: Pilot mancante sullo stesso GameObject (aggiungi Pilot.cs).");
+                return;
+            }
+
+            var profile = PilotGenerator.Generate(pilotTraitPool);
+            pilot.ApplyProfile(profile);
+
+            var seed = (int)(Time.realtimeSinceStartup * 1000f) ^ GetInstanceID();
+            var nameProfile = PilotNameGenerator.Generate(seed);
+            pilot.ApplyNameProfile(nameProfile, null);
+
+            energyDrainMultiplier = Mathf.Max(0.01f, pilot.EnergyConsumptionMultiplier);
+
+            Debug.Log(
+                $"[SpaceshipLife] New Pilot: name={pilot.DisplayName} startAge={pilot.StartAge} maxAge={pilot.MaxAge} energyMul={energyDrainMultiplier} traits={pilot.Traits.Count}");
         }
 
         private void Update()
         {
             if (!IsPilotAlive) return;
-            if (pilot == null) return;
+            if (!pilot) return;
 
-            // Età cresce (solo interi) in base al tempo reale
-            float yearsToAdd = yearsPerSecond * Time.deltaTime;
+            var yearsToAdd = yearsPerSecond * Time.deltaTime;
+            var died = pilot.AdvanceYears(yearsToAdd);
 
-            bool died = pilot.AdvanceYears(yearsToAdd);
             if (died)
-            {
                 KillPilot("Pilot reached max age");
-            }
         }
 
         /// <summary>
@@ -96,33 +115,36 @@ namespace Stranogene.Games.Oltre.Spaceship
         {
             if (!IsPilotAlive || Energy <= 0f) return;
 
-            float drain = energyDrainPerSecond;
+            var drain = energyDrainPerSecond;
 
             if (energyDrainPerSpeedPerSecond > 0f)
                 drain += currentSpeed * energyDrainPerSpeedPerSecond;
 
+            drain *= energyDrainMultiplier;
+
             Energy -= drain * dt;
 
-            if (Energy <= 0f)
-            {
-                Energy = 0f;
-                TriggerStopOnce("Energy depleted");
-            }
+            if (Energy > 0f) return;
+
+            Energy = 0f;
+            TriggerStopOnce(StopReason.EnergyDepleted, "Energy depleted");
         }
 
         public void KillPilot(string reason)
         {
             if (!IsPilotAlive) return;
+
             IsPilotAlive = false;
-            TriggerStopOnce(reason);
+            TriggerStopOnce(StopReason.PilotDead, reason);
         }
 
-        private void TriggerStopOnce(string reason)
+        private void TriggerStopOnce(StopReason stopReason, string reason)
         {
             if (hasTriggeredStop) return;
-            hasTriggeredStop = true;
 
-            // Non facciamo altro qui: lo stop fisico lo fa il movement (così restano separati).
+            hasTriggeredStop = true;
+            CurrentStopReason = stopReason;
+
             Debug.Log($"[SpaceshipLife] STOP: {reason}");
         }
     }

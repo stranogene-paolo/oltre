@@ -34,7 +34,6 @@ namespace Stranogene.Games.Oltre.Debugging
 
         private void Awake()
         {
-            // Evita duplicati se in futuro aggiungiamo scene multiple.
             var existing = FindObjectsByType<DebugOverlay>(FindObjectsSortMode.None);
             if (existing != null && existing.Length > 1)
             {
@@ -44,7 +43,6 @@ namespace Stranogene.Games.Oltre.Debugging
 
             DontDestroyOnLoad(gameObject);
 
-            // SOLO dati non-IMGUI qui.
             boxRect = new Rect(10, 10, 460, 185);
         }
 
@@ -53,11 +51,9 @@ namespace Stranogene.Games.Oltre.Debugging
             if (Input.GetKeyDown(toggleKey))
                 visible = !visible;
 
-            // Auto-bind leggero: prova a trovare SpaceshipLife se non assegnato.
             if (!spaceshipLife)
                 TryBindFromRunManager();
 
-            // Smoothing su deltaTime NON scalato (così anche con slowmo l’FPS resta “vero”).
             var dt = Time.unscaledDeltaTime;
             var t = (fpsSmoothing <= 0f) ? 1f : Mathf.Clamp01(dt / fpsSmoothing);
             smoothedUnscaledDeltaTime = Mathf.Lerp(smoothedUnscaledDeltaTime, dt, t);
@@ -67,7 +63,6 @@ namespace Stranogene.Games.Oltre.Debugging
         {
             if (!visible) return;
 
-            // In Unity alcune proprietà GUI (es. GUI.skin) vanno toccate solo dentro OnGUI.
             if (style == null)
             {
                 style = new GUIStyle(GUI.skin.label)
@@ -90,15 +85,12 @@ namespace Stranogene.Games.Oltre.Debugging
             var w = Screen.width;
             var h = Screen.height;
 
-            // Gameplay readout (numerici come richiesto)
             string gameplayLine;
-            if (spaceshipLife != null)
+            if (spaceshipLife)
             {
-                float energy = spaceshipLife.Energy; // float
-
-                // Età pilota: solo interi, solo in crescita
-                int age = spaceshipLife.PilotAge;
-                int maxAge = spaceshipLife.PilotMaxAge;
+                var energy = spaceshipLife.Energy;
+                var age = spaceshipLife.PilotAge;
+                var maxAge = spaceshipLife.PilotMaxAge;
 
                 gameplayLine =
                     $"Energy: <b>{energy:0.0}</b>  |  Pilot Age: <b>{age}</b> / <b>{maxAge}</b>";
@@ -126,12 +118,9 @@ namespace Stranogene.Games.Oltre.Debugging
 
         private void OnEnable()
         {
-            if (RunManager.Instance != null)
-            {
-                RunManager.Instance.OnRunStarted += HandleRunStarted;
-                // bind immediato nel caso l’overlay entri dopo il run start
-                TryBindFromRunManager();
-            }
+            if (RunManager.Instance == null) return;
+            RunManager.Instance.OnRunStarted += HandleRunStarted;
+            TryBindFromRunManager();
         }
 
         private void OnDisable()
