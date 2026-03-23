@@ -65,14 +65,11 @@ namespace Stranogene.Games.Oltre.Spaceship
 
         private void Update()
         {
-            // Frecce direzionali / WASD (Input Manager classico).
-            // Se stai usando il New Input System, lo adattiamo dopo: qui teniamo MVP.
             var x = Input.GetAxisRaw("Horizontal");
             var y = Input.GetAxisRaw("Vertical");
 
             var v = new Vector2(x, y);
 
-            // Normalizza per evitare diagonali più veloci.
             moveInput = (v.sqrMagnitude > 1f) ? v.normalized : v;
         }
 
@@ -85,10 +82,8 @@ namespace Stranogene.Games.Oltre.Spaceship
                 return;
             }
 
-            // Mantieni drag in sync con inspector (utile mentre tuniamo).
             rb.linearDamping = linearDrag;
 
-            // 1) Forza di accelerazione
             if (moveInput.sqrMagnitude is > 0f and > 0f)
             {
                 rb.AddForce(moveInput * acceleration, ForceMode2D.Force);
@@ -97,7 +92,6 @@ namespace Stranogene.Games.Oltre.Spaceship
                     life.ConsumeEnergy(Time.fixedDeltaTime, rb.linearVelocity.magnitude);
             }
 
-            // 2) Clamp velocità massima
             var vel = rb.linearVelocity;
             var speed = vel.magnitude;
 
@@ -108,14 +102,11 @@ namespace Stranogene.Games.Oltre.Spaceship
                 speed = vel.magnitude;
             }
 
-            // 3) Rotazione verso movimento
             if (!rotateToMovement || !(speed >= rotateMinSpeed)) return;
             var dir = vel / speed;
 
-            // Calcola l’angolo in gradi per ruotare lo "spriteForwardLocal" verso "dir"
             var angle = Vector2.SignedAngle(spriteForwardLocal, dir);
 
-            // Ruota attorno a Z
             transform.rotation = Quaternion.Euler(0f, 0f, angle);
         }
     }

@@ -1,0 +1,27 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: c1f7740d0785c48b19364f21e2fbffe3, type: 3}
+  m_Name: PilotTraitPool
+  m_EditorClassIdentifier: Assembly-CSharp::Stranogene.Games.Oltre.ScriptableObjects.PilotTraitPoolSO
+  minStartAge: 25
+  maxStartAge: 45
+  minMaxAge: 55
+  maxMaxAge: 75
+  minTraits: 1
+  maxTraits: 3
+  uniqueTraits: 1
+  traits:
+  - {fileID: 11400000, guid: 4edc1ed8e836a4312978a38bf1a7d607, type: 2}
+  - {fileID: 11400000, guid: 0fb6f3bef586c45f285981bb9a3dc277, type: 2}
+  - {fileID: 11400000, guid: 2db81304cea8b4ab08a7d24f4f1f178d, type: 2}
+  finalMinMaxAge: 40
+  finalMaxMaxAge: 90

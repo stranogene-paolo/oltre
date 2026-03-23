@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 using Stranogene.Games.Oltre.Spaceship;
-using System.Reflection;
 using Stranogene.Games.Oltre.CameraSystem;
 
 namespace Stranogene.Games.Oltre.Run
@@ -84,17 +83,14 @@ namespace Stranogene.Games.Oltre.Run
         private bool rebindMainCameraOnNewRun = true;
 
 
-        // Stato run
         public int CurrentRunIndex { get; private set; } = 0;
         public bool IsRunActive { get; private set; } = false;
 
         public GameObject CurrentSpaceship { get; private set; }
         public SpaceshipLife CurrentLife { get; private set; }
 
-        // Snapshot minimale dei derelitti creati (utile se vuoi in futuro respawnare su scene load)
         private readonly List<GameObject> derelictsInScene = new();
 
-        // Detect transizione “run finita”
         private bool wasAbleToMoveLastFrame = true;
 
         public event Action<int> OnRunStarted;
@@ -132,12 +128,12 @@ namespace Stranogene.Games.Oltre.Run
             if (CurrentLife == null) return;
 
             // La run finisce quando non puoi più muovere: o pilota morto o energia finita
-            bool canMove = CurrentLife.CanMove;
+            var canMove = CurrentLife.CanMove;
 
             // Trigger SOLO quando passa da true -> false
             if (wasAbleToMoveLastFrame && !canMove)
             {
-                string reason = CurrentLife.IsPilotAlive ? "Energy depleted" : "Pilot dead";
+                var reason = ResolveRunEndReason(CurrentLife);
                 EndCurrentRun(reason);
 
                 if (autoRestartOnRunEnd)
@@ -166,13 +162,11 @@ namespace Stranogene.Games.Oltre.Run
                 return;
             }
 
-            // Chiudi eventuale run attiva senza trasformare (caso: chiamata manuale)
             if (IsRunActive)
             {
                 EndCurrentRun("Forced new run");
             }
 
-            // Se esiste una ship precedente (CurrentSpaceship), gestiscila
             if (CurrentSpaceship != null)
             {
                 if (destroyCurrentShipOnNewRun)
@@ -185,9 +179,8 @@ namespace Stranogene.Games.Oltre.Run
                 }
             }
 
-            // Spawna nuova ship
-            Vector3 pos = spawnPoint ? spawnPoint.position : Vector3.zero;
-            Quaternion rot = spawnPoint ? spawnPoint.rotation : Quaternion.identity;
+            var pos = spawnPoint ? spawnPoint.position : Vector3.zero;
+            var rot = spawnPoint ? spawnPoint.rotation : Quaternion.identity;
 
             CurrentSpaceship = Instantiate(spaceshipPrefab, pos, rot);
             CurrentSpaceship.name = $"Spaceship_Run_{CurrentRunIndex + 1}";
@@ -233,50 +226,70 @@ namespace Stranogene.Games.Oltre.Run
         {
             if (CurrentSpaceship == null) return;
 
+            var ship = CurrentSpaceship;
+
             // Mark component (utile per debug / future logic)
-            var marker = CurrentSpaceship.GetComponent<DerelictMarker>();
-            if (marker == null) marker = CurrentSpaceship.AddComponent<DerelictMarker>();
+            var marker = ship.GetComponent<DerelictMarker>();
+            if (marker == null) marker = ship.AddComponent<DerelictMarker>();
             marker.RunIndex = CurrentRunIndex;
             marker.Timestamp = DateTime.UtcNow.ToString("o");
 
             // Tag / Layer (opzionali)
             if (!string.IsNullOrEmpty(derelictTag))
-                CurrentSpaceship.tag = derelictTag;
+                ship.tag = derelictTag;
 
             if (derelictLayer != 0)
-                SetLayerRecursively(CurrentSpaceship, derelictLayer);
+                SetLayerRecursively(ship, derelictLayer);
 
-            // Disabilita life (opzionale)
+            // Disabilita life (così non consuma / non invecchia più)
             if (disableLifeOnDerelict && CurrentLife != null)
                 CurrentLife.enabled = false;
 
-            // Congela RB (opzionale)
+            // Disabilita movement sulla ship che sta diventando derelitto
+            var movements = ship.GetComponentsInChildren<SpaceshipMovement>(true);
+            foreach (var movement in movements)
+            {
+                if (movement != null)
+                    movement.enabled = false;
+            }
+
+            // Congela fisica 2D della ship
             if (freezeDerelictRigidbody)
             {
-                var rb = CurrentSpaceship.GetComponent<Rigidbody>();
-                if (rb != null)
+                var rb2D = ship.GetComponent<Rigidbody2D>();
+                if (rb2D != null)
                 {
-                    rb.linearVelocity = Vector3.zero;
-                    rb.angularVelocity = Vector3.zero;
-                    rb.isKinematic = true;
+                    rb2D.linearVelocity = Vector2.zero;
+                    rb2D.angularVelocity = 0f;
+                    rb2D.bodyType = RigidbodyType2D.Kinematic;
+                }
+                else
+                {
+                    // fallback difensivo nel caso in futuro si usi una fisica 3D
+                    var rb = ship.GetComponent<Rigidbody>();
+                    if (rb != null)
+                    {
+                        rb.linearVelocity = Vector3.zero;
+                        rb.angularVelocity = Vector3.zero;
+                        rb.isKinematic = true;
+                    }
                 }
             }
 
-            // Disabilita extra behaviour (movement/input ecc) se assegnati
-            for (int i = 0; i < extraBehavioursToDisableOnDerelict.Count; i++)
+            // Disabilita eventuali extra behaviour assegnati manualmente
+            foreach (var b in extraBehavioursToDisableOnDerelict)
             {
-                var b = extraBehavioursToDisableOnDerelict[i];
                 if (b != null) b.enabled = false;
             }
 
             // Track
-            derelictsInScene.Add(CurrentSpaceship);
+            derelictsInScene.Add(ship);
 
             // Enforce cap
             if (maxDerelictsInScene > 0 && derelictsInScene.Count > maxDerelictsInScene)
             {
-                int toRemove = derelictsInScene.Count - maxDerelictsInScene;
-                for (int i = 0; i < toRemove; i++)
+                var toRemove = derelictsInScene.Count - maxDerelictsInScene;
+                for (var i = 0; i < toRemove; i++)
                 {
                     var go = derelictsInScene[0];
                     derelictsInScene.RemoveAt(0);
@@ -301,7 +314,7 @@ namespace Stranogene.Games.Oltre.Run
             if (ship == null) return;
 
             // Se in futuro vuoi un child dedicato tipo "CameraTarget", lo supportiamo gratis.
-            Transform target = ship.Find("CameraTarget");
+            var target = ship.Find("CameraTarget");
             if (target == null) target = ship;
 
             var cam = Camera.main;
@@ -319,6 +332,19 @@ namespace Stranogene.Games.Oltre.Run
             }
 
             follow.SetTarget(target);
+        }
+
+        private static string ResolveRunEndReason(SpaceshipLife life)
+        {
+            if (life == null)
+                return "Unknown";
+
+            return life.CurrentStopReason switch
+            {
+                SpaceshipLife.StopReason.EnergyDepleted => "Energy depleted",
+                SpaceshipLife.StopReason.PilotDead => "Pilot dead",
+                _ => life.IsPilotAlive ? "Movement unavailable" : "Pilot dead"
+            };
         }
     }
 }

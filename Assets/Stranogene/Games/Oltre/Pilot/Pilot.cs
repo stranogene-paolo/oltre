@@ -1,52 +1,62 @@
+using System.Collections.Generic;
+using Stranogene.Games.Oltre.ScriptableObjects;
 using UnityEngine;
 
 namespace Stranogene.Games.Oltre.Pilot
 {
     /// <summary>
     /// Pilot
-    /// Gestisce l'età del pilota come valore intero che cresce nel tempo.
-    /// - Parte da un'età coerente (random in range)
-    /// - Cresce solo a interi (no decimali esposti)
+    /// - Età cresce a interi (no decimali esposti)
     /// - Muore quando raggiunge/supera MaxAge
+    /// - Profilo runtime generato a ogni run (ScriptableObject-driven)
     /// </summary>
     public class Pilot : MonoBehaviour
     {
-        [Header("Age Setup (integers only)")] [Tooltip("Età minima coerente per un pilota.")] [SerializeField]
-        private int minStartAge = 25;
+        [Header("Runtime (Debug)")] [SerializeField]
+        private int startAge;
 
-        [Tooltip("Età massima coerente per un pilota (età di partenza).")] [SerializeField]
-        private int maxStartAge = 45;
+        [SerializeField] private int age;
+        [SerializeField] private int maxAge = 65;
+        [SerializeField] private float energyConsumptionMultiplier = 1f;
 
-        [Tooltip("Età massima raggiunta la quale il pilota muore.")] [SerializeField]
-        private int maxAge = 65;
+        [SerializeField] private List<PilotTraitSO> traits = new();
 
-        public int StartAge { get; private set; }
-        public int Age { get; private set; }
+        [SerializeField] private string displayName;
+        [SerializeField] private string callsign;
+        [SerializeField] private string title;
+
+        public string DisplayName => displayName;
+        public string Callsign => callsign;
+        public string Title => title;
+
+        public int StartAge => startAge;
+        public int Age => age;
         public int MaxAge => maxAge;
 
-        // Accumula frazioni di "anni" finché non diventano 1 anno intero
+        public float EnergyConsumptionMultiplier => energyConsumptionMultiplier;
+        public IReadOnlyList<PilotTraitSO> Traits => traits;
+
         private float yearAccumulator;
+        public bool IsAlive => age < maxAge;
 
-        public bool IsAlive => Age < maxAge;
-
-        private void OnValidate()
-        {
-            if (minStartAge < 0) minStartAge = 0;
-            if (maxStartAge < minStartAge) maxStartAge = minStartAge;
-            if (maxAge < maxStartAge) maxAge = maxStartAge; // maxAge deve essere >= possibile startAge
-        }
-
-        /// <summary>Genera/inizializza un nuovo pilota (nuova run).</summary>
-        public void ResetPilot()
+        /// <summary>
+        /// Applica un profilo runtime generato per la run.
+        /// </summary>
+        public void ApplyProfile(PilotRuntimeProfile profile)
         {
             yearAccumulator = 0f;
 
-            // Età iniziale "coerente": random intero nel range
-            StartAge = Random.Range(minStartAge, maxStartAge + 1);
-            Age = StartAge;
+            startAge = profile.startAge;
+            age = startAge;
 
-            // Safety: se per qualche motivo StartAge è già >= maxAge, rendiamo maxAge coerente
-            if (maxAge <= Age) maxAge = Age + 1;
+            maxAge = profile.maxAge;
+            if (maxAge <= age) maxAge = age + 1;
+
+            energyConsumptionMultiplier = Mathf.Max(0.01f, profile.energyConsumptionMultiplier);
+
+            traits.Clear();
+            if (profile.traits != null)
+                traits.AddRange(profile.traits);
         }
 
         /// <summary>
@@ -60,21 +70,23 @@ namespace Stranogene.Games.Oltre.Pilot
 
             yearAccumulator += yearsToAdd;
 
-            // Applica solo anni interi
-            int wholeYears = Mathf.FloorToInt(yearAccumulator);
+            var wholeYears = Mathf.FloorToInt(yearAccumulator);
             if (wholeYears <= 0) return false;
 
             yearAccumulator -= wholeYears;
-            Age += wholeYears;
+            age += wholeYears;
 
-            // Clamp e check morte
-            if (Age >= maxAge)
-            {
-                Age = maxAge;
-                return true;
-            }
+            if (age < maxAge) return false;
+            age = maxAge;
+            return true;
+        }
 
-            return false;
+        public void ApplyNameProfile(PilotNameProfile nameProfile, object unused = null)
+        {
+            callsign = nameProfile.callsign;
+            title = nameProfile.title;
+
+            displayName = PilotNameGenerator.BuildDisplayName(nameProfile, includeCallsign: true, includeTitle: true);
         }
     }
 }
